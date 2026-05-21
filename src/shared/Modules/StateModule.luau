@@ -11,7 +11,7 @@ StateModule.States = {
 	AIRBORNE = "airborne",
 	GLIDING = "gliding",
 	WALKING = "walking",
-    DASHING = "dashing"
+	DASHING = "dashing",
 }
 
 StateModule.ValidTransitions = {
@@ -24,12 +24,12 @@ StateModule.ValidTransitions = {
 	sliding = { "walking", "running", "airborne" },
 	ducking = { "walking", "running" },
 	rolling = { "airborne", "walking", "running" },
-    dashing = { "walking", "running", "airborne" },
+	dashing = { "walking", "running", "airborne" },
 }
 
 local subscribers = {}
 
-local currentState = "idle"
+local currentState = "walking"
 local previousState = nil
 
 function StateModule:AddSubscriber(subscriberFunction)

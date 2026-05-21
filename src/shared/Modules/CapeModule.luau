@@ -101,42 +101,85 @@ local function solveConstraints()
 	for i = 1, CONSTRAINT_ITERATIONS do
 		for row = 1, CAPE_ROWS do
 			for col = 1, CAPE_COLS do
-				local downNeighbour
-				local rightNeighbour
-
 				if col < CAPE_COLS then
-					rightNeighbour = particles[row][col + 1]
+					local rightNeighbour = particles[row][col + 1]
+					local A = particles[row][col]
+					local B = rightNeighbour
+					if A and B then
+						local delta = B.position - A.position
+						local dist = delta.Magnitude
+						local error = dist - CAPE_SPACING
+						local correction = delta.Unit * error * 0.5
+
+						if not A.anchored then
+							A.position += correction
+						end
+						if not B.anchored then
+							B.position -= correction
+						end
+					end
 				end
 
 				if row < CAPE_ROWS then
-					downNeighbour = particles[row + 1][col]
-				end
+					local downNeighbour = particles[row + 1][col]
+					local A = particles[row][col]
+					local B = downNeighbour
+					if A and B then
+						local delta = B.position - A.position
+						local dist = delta.Magnitude
+						local error = dist - CAPE_SPACING
+						local correction = delta.Unit * error * 0.5
 
-				local delta = downNeighbour.position - rightNeighbour.position
-				local dist = delta.Magnitude
-				local error = dist - CAPE_SPACING
-				local correction = delta.Unit * error * 0.5
-
-				if not rightNeighbour.anchored then
-					rightNeighbour.position += correction
-				end
-				if not downNeighbour.anchored then
-					downNeighbour.position -= correction
+						if not A.anchored then
+							A.position += correction
+						end
+						if not B.anchored then
+							B.position -= correction
+						end
+					end
 				end
 			end
 		end
 	end
 end
 
-local function updateVisuals() end
+local function updateVisuals()
+	for row = 1, CAPE_ROWS do
+		for col = 1, CAPE_COLS do
+			local part = visuals[row][col]
+			local particle = particles[row][col]
+			local neighbour
+
+			if row < CAPE_ROWS then
+				neighbour = particles[row + 1][col]
+			else
+				neighbour = particles[row - 1][col]
+			end
+
+			part.CFrame = CFrame.lookAt(particle.position, neighbour.position) * CFrame.Angles(math.pi / 2, 0, 0)
+		end
+	end
+end
 
 local function onStateChanged(new, prev)
 	currentState = new
 end
 
-function CapeModule:show() end
+function CapeModule:show()
+	for row = 1, CAPE_ROWS do
+		for col = 1, CAPE_COLS do
+			visuals[row][col].Transparency = 0
+		end
+	end
+end
 
-function CapeModule:hide() end
+function CapeModule:hide()
+	for row = 1, CAPE_ROWS do
+		for col = 1, CAPE_COLS do
+			visuals[row][col].Transparency = 1
+		end
+	end
+end
 
 function CapeModule:init(char, rootPart)
 	character = char

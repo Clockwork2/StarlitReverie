@@ -41,6 +41,7 @@ function MovementModule:init(char, humanoid, rootPart)
 	hum = humanoid
 	hrp = rootPart
 end
+
 function MovementModule:checkWall()
 	local origin = hrp.Position
 	local right = hrp.CFrame.RightVector

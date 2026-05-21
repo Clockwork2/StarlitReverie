@@ -41,8 +41,7 @@ function MovementModule:init(char, humanoid, rootPart)
 	hum = humanoid
 	hrp = rootPart
 end
-
-local function checkWall()
+function MovementModule:checkWall()
 	local origin = hrp.Position
 	local right = hrp.CFrame.RightVector
 	local left = -hrp.CFrame.RightVector
@@ -186,7 +185,7 @@ function MovementModule:startRoll()
 end
 
 function MovementModule:startWallRun()
-	local leftResult, rightResult = checkWall()
+	local leftResult, rightResult = MovementModule:checkWall()
 
 	if rightResult then
 		wallrunNormal = rightResult.Normal
@@ -202,11 +201,11 @@ function MovementModule:startWallRun()
 
 	wallrunConnection = RunService.Heartbeat:Connect(function(dt)
 		local velocity = hrp.AssemblyLinearVelocity
-		local newY = velocity.Y * WALLRUN_GRAVITY_SCALE
+		local newY = math.max(velocity.Y * WALLRUN_GRAVITY_SCALE, -5)
 		local newVelocity = Vector3.new(velocity.X, newY, velocity.Z)
 		hrp.AssemblyLinearVelocity = newVelocity
 
-		local leftResult, rightResult = checkWall()
+		local leftResult, rightResult = MovementModule:checkWall()
 
 		if rightResult then
 			wallrunNormal = rightResult.Normal

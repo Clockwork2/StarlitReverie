@@ -11,11 +11,12 @@ StateModule.States = {
 	AIRBORNE = "airborne",
 	GLIDING = "gliding",
 	WALKING = "walking",
+    DASHING = "dashing"
 }
 
 StateModule.ValidTransitions = {
-	walking = { "running", "airborne", "ducking" },
-	running = { "walking", "sliding", "rolling", "airborne", "wallrunning", "ducking" },
+	walking = { "running", "airborne", "ducking", "dashing" },
+	running = { "walking", "sliding", "rolling", "airborne", "wallrunning", "ducking", "dashing" },
 	airborne = { "walking", "running", "wallrunning", "grappling", "gliding" },
 	gliding = { "airborne", "wallrunning", "grappling", "walking" },
 	wallrunning = { "airborne", "walking" },
@@ -23,6 +24,7 @@ StateModule.ValidTransitions = {
 	sliding = { "walking", "running", "airborne" },
 	ducking = { "walking", "running" },
 	rolling = { "airborne", "walking", "running" },
+    dashing = { "walking", "running", "airborne" },
 }
 
 local subscribers = {}

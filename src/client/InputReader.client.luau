@@ -1,156 +1,215 @@
 local Players = game:GetService("Players")
-local replicatedStorage = game:GetService("ReplicatedStorage")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 
-local shared = replicatedStorage:WaitForChild("Shared")
+local shared = ReplicatedStorage:WaitForChild("Shared")
 local modules = shared:WaitForChild("Modules")
+local parkour = modules:WaitForChild("Parkour")
+local cameraModules = modules:WaitForChild("Camera")
 local remotes = shared:WaitForChild("Remotes")
 
-local StateModule = require(modules:WaitForChild("StateModule"))
-local MovementModule = require(modules:WaitForChild("MovementModule"))
-local GlideModule = require(modules:WaitForChild("GlideModule"))
-local CameraModule = require(modules:WaitForChild("CameraModule"))
-local CapeModule = require(modules:WaitForChild("CapeModule"))
+local StateModule = require(parkour:WaitForChild("StateModule"))
+local MovementModule = require(parkour:WaitForChild("MovementModule"))
+local GlideModule = require(parkour:WaitForChild("GlideModule"))
+local CameraModule = require(cameraModules:WaitForChild("CameraModule"))
+local CapeModule = require(parkour:WaitForChild("CapeModule"))
 
 local SendInput = remotes:WaitForChild("SendInput")
+local ReceiveCorrection = remotes:WaitForChild("ReceiveCorrection")
 
-local Player = Players.LocalPlayer
-local char = Player.Character or Player.CharacterAdded:Wait()
-local hum = char:WaitForChild("Humanoid")
-local hrp = char:WaitForChild("HumanoidRootPart")
+local player = Players.LocalPlayer
+local char: Model
+local hum: Humanoid
+local hrp: BasePart
 
-print("InputReader: character ready, calling inits")
+local RUN_SPEED = 30
+local WALK_SPEED = 16
 
-MovementModule:init(char, hum, hrp)
-GlideModule:init(char, hum)
-CameraModule:init(char, hum, hrp)
-CapeModule:init(char, hrp)
-CameraModule:start()
-
-print("InputReader: all inits done, state:", StateModule:getState())
-
-local lastWTime = 0
-
-local function getVelocity()
-	return hrp.AssemblyLinearVelocity.Magnitude
-end
+local lastWTap = 0
+local wHeld = false
+local spaceHeld = false
+local correcting = false
+local correctTarget: Vector3?
 
 local function fireServer()
-	local state = StateModule:getState()
-	print("fireServer: state =", state, "pos =", hrp.Position)
-	SendInput:FireServer(state, hrp.Position, tick())
+	if hrp then
+		SendInput:FireServer(StateModule:getState(), hrp.Position, os.clock())
+	end
 end
 
-UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
-	if gameProcessedEvent then
+local function tryState(newState: string): boolean
+	local before = StateModule:getState()
+	StateModule:setState(newState)
+	if StateModule:getState() ~= before then
+		fireServer()
+		return true
+	end
+	return false
+end
+
+local function setupCharacter(newChar: Model)
+	char = newChar
+	hum = char:WaitForChild("Humanoid") :: Humanoid
+	hrp = char:WaitForChild("HumanoidRootPart") :: BasePart
+
+	CapeModule:destroy()
+	MovementModule:init(char, hum, hrp)
+	GlideModule:init(char, hum)
+	CameraModule:init(char, hum, hrp)
+	CapeModule:init(char, hrp)
+	CameraModule:start()
+	StateModule:forceState("walking")
+end
+
+setupCharacter(player.Character or player.CharacterAdded:Wait())
+player.CharacterAdded:Connect(setupCharacter)
+
+ReceiveCorrection.OnClientEvent:Connect(function(correctedPos: Vector3)
+	correcting = true
+	correctTarget = correctedPos
+end)
+
+RunService.Heartbeat:Connect(function(dt)
+	if correcting and correctTarget then
+		local dist = (hrp.Position - correctTarget).Magnitude
+		if dist < 0.1 then
+			correcting = false
+			correctTarget = nil
+		else
+			hrp.CFrame =
+				hrp.CFrame:Lerp(CFrame.new(correctTarget) * (hrp.CFrame - hrp.CFrame.Position), math.min(10 * dt, 1))
+		end
+	end
+
+	if not hum or not hrp then
 		return
 	end
 
+	local humanoidState = hum:GetState()
 	local currentState = StateModule:getState()
-	print("InputBegan:", input.KeyCode, "| currentState:", currentState)
+	if currentState == "running" and not wHeld then
+		tryState("walking")
+		return
+	end
 
-	if input.KeyCode == Enum.KeyCode.W then
-		if tick() - lastWTime < 0.3 then
-			print("Double tap W → running")
-			StateModule:setState("running")
-			fireServer()
-		else
-			lastWTime = tick()
+	if currentState == "gliding" and hum.FloorMaterial ~= Enum.Material.Air then
+		MovementModule:forceStopGlide()
+		tryState("walking")
+		return
+	end
+
+	if
+		(currentState == "walking" or currentState == "running")
+		and (humanoidState == Enum.HumanoidStateType.Freefall or humanoidState == Enum.HumanoidStateType.Jumping)
+	then
+		tryState("airborne")
+	elseif spaceHeld and currentState == "airborne" and hrp.AssemblyLinearVelocity.Y < 2 then
+		tryState("gliding")
+	end
+end)
+
+UserInputService.InputBegan:Connect(function(input: InputObject, gpe: boolean)
+	if gpe then
+		return
+	end
+
+	local state = StateModule:getState()
+	local kc = input.KeyCode
+
+	if kc == Enum.KeyCode.W then
+		wHeld = true
+		local now = os.clock()
+		if now - lastWTap < 0.3 and (state == "walking" or state == "running") then
+			tryState("running")
+		end
+		lastWTap = now
+	end
+
+	if kc == Enum.KeyCode.Space then
+		spaceHeld = true
+		if state == "airborne" then
+			tryState("gliding")
+		elseif state == "walking" or state == "running" then
+			hrp.AssemblyLinearVelocity = Vector3.new(
+				hrp.AssemblyLinearVelocity.X,
+				math.max(hrp.AssemblyLinearVelocity.Y, 30),
+				hrp.AssemblyLinearVelocity.Z
+			)
+			tryState("airborne")
 		end
 	end
 
-	if input.KeyCode == Enum.KeyCode.Space then
-		if currentState == "airborne" then
-			print("Space in airborne → gliding")
-			StateModule:setState("gliding")
-			fireServer()
-		else
-			print("Space → airborne")
-			StateModule:setState("airborne")
-			fireServer()
+	if kc == Enum.KeyCode.LeftShift then
+		local speed = Vector3.new(hrp.AssemblyLinearVelocity.X, 0, hrp.AssemblyLinearVelocity.Z).Magnitude
+		local wantsSlide = speed > 2 or hum.MoveDirection.Magnitude > 0.1
+		if (state == "running" or state == "walking") and wantsSlide then
+			tryState("sliding")
 		end
 	end
 
-	if input.KeyCode == Enum.KeyCode.LeftShift then
-		if currentState == "running" then
-			print("Shift in running → sliding")
-			StateModule:setState("sliding")
-			fireServer()
+	if kc == Enum.KeyCode.LeftControl then
+		if state == "walking" or state == "running" then
+			tryState("ducking")
 		end
 	end
 
-	if input.KeyCode == Enum.KeyCode.LeftControl then
-		print("Ctrl → ducking")
-		StateModule:setState("ducking")
-		fireServer()
+	if kc == Enum.KeyCode.Q then
+		if state ~= "ducking" and state ~= "sliding" then
+			tryState("dashing")
+		end
 	end
 
-	if input.KeyCode == Enum.KeyCode.Q then
-		print("Q → dashing")
-		StateModule:setState("dashing")
-		fireServer()
+	if kc == Enum.KeyCode.F then
+		if state ~= "ducking" and state ~= "sliding" then
+			tryState("rolling")
+		end
 	end
 
-	if input.KeyCode == Enum.KeyCode.F then
-		print("F → rolling")
-		StateModule:setState("rolling")
-		fireServer()
+	if kc == Enum.KeyCode.E then
+		if state ~= "ducking" and state ~= "sliding" then
+			tryState("grappling")
+		end
 	end
 
-	if input.KeyCode == Enum.KeyCode.E then
-		print("E → grappling")
-		StateModule:setState("grappling")
-		fireServer()
-	end
-
-	if input.KeyCode == Enum.KeyCode.C then
-		print("C → toggleView")
+	if kc == Enum.KeyCode.C then
 		CameraModule:toggleView()
 	end
 end)
 
-UserInputService.InputEnded:Connect(function(input, gameProcessedEvent)
-	if gameProcessedEvent then
+UserInputService.InputEnded:Connect(function(input: InputObject, gpe: boolean)
+	if gpe then
 		return
 	end
 
-	local currentState = StateModule:getState()
+	local state = StateModule:getState()
+	local kc = input.KeyCode
 
-	if input.KeyCode == Enum.KeyCode.LeftShift then
-		if getVelocity() > 2 then
-			print("Shift released, velocity > 2 → running")
-			StateModule:setState("running")
-		else
-			print("Shift released, velocity <= 2 → walking")
-			StateModule:setState("walking")
-		end
-		fireServer()
-	end
-
-	if input.KeyCode == Enum.KeyCode.LeftControl then
-		if getVelocity() > 2 then
-			print("Ctrl released, velocity > 2 → running")
-			StateModule:setState("running")
-		else
-			print("Ctrl released, velocity <= 2 → walking")
-			StateModule:setState("walking")
-		end
-		fireServer()
-	end
-
-	if input.KeyCode == Enum.KeyCode.Space then
-		if currentState == "gliding" then
-			print("Space released in gliding → airborne")
-			StateModule:setState("airborne")
-			fireServer()
+	if kc == Enum.KeyCode.W then
+		wHeld = false
+		if state == "running" then
+			tryState("walking")
 		end
 	end
 
-	if input.KeyCode == Enum.KeyCode.W then
-		print("W released → walking")
-		StateModule:setState("walking")
-		fireServer()
+	if kc == Enum.KeyCode.Space then
+		spaceHeld = false
+		if state == "gliding" then
+			tryState("airborne")
+		end
+	end
+
+	if kc == Enum.KeyCode.LeftShift then
+		if state == "sliding" then
+			local speed = Vector3.new(hrp.AssemblyLinearVelocity.X, 0, hrp.AssemblyLinearVelocity.Z).Magnitude
+			tryState(speed > RUN_SPEED * 0.5 and "running" or "walking")
+		end
+	end
+
+	if kc == Enum.KeyCode.LeftControl then
+		if state == "ducking" then
+			local speed = Vector3.new(hrp.AssemblyLinearVelocity.X, 0, hrp.AssemblyLinearVelocity.Z).Magnitude
+			tryState(speed > WALK_SPEED * 0.7 and "running" or "walking")
+		end
 	end
 end)
-
-print("InputReader: fully loaded")

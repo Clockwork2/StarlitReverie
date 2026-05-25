@@ -17,8 +17,11 @@ local hrp: BasePart
 
 local isFirstPerson = false
 local viewTransitioning = false
+local cursorFree = false
 local started = false
 local inputConnection: RBXScriptConnection?
+local inputBeganConnection: RBXScriptConnection?
+local inputEndedConnection: RBXScriptConnection?
 local accessoryConnection: RBXScriptConnection?
 
 local TP_DISTANCE = 16
@@ -174,9 +177,15 @@ function CameraModule:start()
 	if inputConnection then
 		inputConnection:Disconnect()
 	end
+	if inputBeganConnection then
+		inputBeganConnection:Disconnect()
+	end
+	if inputEndedConnection then
+		inputEndedConnection:Disconnect()
+	end
 
 	inputConnection = UserInputService.InputChanged:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseMovement then
+		if input.UserInputType == Enum.UserInputType.MouseMovement and not cursorFree then
 			local sensitivity = 0.0026
 			mouseYaw = mouseYaw - input.Delta.X * sensitivity
 			mousePitch = mousePitch - input.Delta.Y * sensitivity
@@ -184,9 +193,29 @@ function CameraModule:start()
 		end
 	end)
 
+	inputBeganConnection = UserInputService.InputBegan:Connect(function(input, gpe)
+		if gpe then
+			return
+		end
+		if input.KeyCode == Enum.KeyCode.LeftAlt or input.KeyCode == Enum.KeyCode.RightAlt then
+			cursorFree = true
+		end
+	end)
+
+	inputEndedConnection = UserInputService.InputEnded:Connect(function(input, _gpe)
+		if input.KeyCode == Enum.KeyCode.LeftAlt or input.KeyCode == Enum.KeyCode.RightAlt then
+			cursorFree = false
+		end
+	end)
+
 	RunService:BindToRenderStep("ParkourCamera", Enum.RenderPriority.Camera.Value, function(dt)
-		UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
-		UserInputService.MouseIconEnabled = false
+		if cursorFree then
+			UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+			UserInputService.MouseIconEnabled = true
+		else
+			UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+			UserInputService.MouseIconEnabled = false
+		end
 
 		bobTime += dt
 

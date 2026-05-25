@@ -1,0 +1,3 @@
+local TemporalObjectModule = {}
+
+return TemporalObjectModule
